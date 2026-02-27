@@ -1,0 +1,8 @@
+<launch>
+    <node pkg="attach_shelf" exec="pre_approach_node" name="pre_approach_node" output="screen">
+        <param name="obstacle" value="0.5"/>
+        <param name="degrees" value="-90"/>
+    </node>
+
+    <node pkg="rviz2" exec="rviz2" name="rviz2" args="-d $(find-pkg-share attach_shelf)/rviz/config.rviz" output="screen"/>
+</launch>
