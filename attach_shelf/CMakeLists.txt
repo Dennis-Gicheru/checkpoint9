@@ -5,7 +5,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# 1. Find all required packages
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -14,27 +14,26 @@ find_package(tf2_ros REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
-add_executable(pre_approach_node src/pre_approach.cpp)
-ament_target_dependencies(pre_approach_node 
-	rclcpp 
-	sensor_msgs 
-	geometry_msgs
-	tf2_ros
-	std_srvs
-	)
-rosidl_target_interfaces(pre_approach_v2_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
+# 2. Generate the Service Interface
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/GoToLoading.srv"
+)
 
+# Extract the C++ typesupport target into a CMake variable
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
-add_executable(attach_shelf_node src/attach_shelf_node.cpp)
-ament_target_dependencies(attach_shelf_node 
-	rclcpp 
-	sensor_msgs 
-	geometry_msgs 
-	tf2_ros 
-	std_srvs
-	)
-rosidl_target_interfaces(approach_service_server_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
+# 3. Add Executables and Link Dependencies
+# Pre-Approach V2
+add_executable(pre_approach_v2_node src/pre_approach_v2.cpp)
+ament_target_dependencies(pre_approach_v2_node rclcpp sensor_msgs geometry_msgs)
+target_link_libraries(pre_approach_v2_node "${cpp_typesupport_target}")
 
+# Approach Service Server
+add_executable(approach_service_server_node src/approach_service_server.cpp)
+ament_target_dependencies(approach_service_server_node rclcpp sensor_msgs geometry_msgs tf2_ros std_srvs)
+target_link_libraries(approach_service_server_node "${cpp_typesupport_target}")
+
+# 4. Install Directives
 install(TARGETS
   pre_approach_v2_node
   approach_service_server_node
@@ -46,17 +45,5 @@ install(DIRECTORY
   rviz
   DESTINATION share/${PROJECT_NAME}
 )
-
-if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # comment the line when a copyright and license is added to all source files
-  set(ament_cmake_copyright_FOUND TRUE)
-  # the following line skips cpplint (only works in a git repo)
-  # comment the line when this package is in a git repo and when
-  # a copyright and license is added to all source files
-  set(ament_cmake_cpplint_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
-endif()
 
 ament_package()
