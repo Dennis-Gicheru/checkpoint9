@@ -12,6 +12,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
 add_executable(pre_approach_node src/pre_approach.cpp)
 ament_target_dependencies(pre_approach_node 
@@ -21,6 +22,8 @@ ament_target_dependencies(pre_approach_node
 	tf2_ros
 	std_srvs
 	)
+rosidl_target_interfaces(pre_approach_v2_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
+
 
 add_executable(attach_shelf_node src/attach_shelf_node.cpp)
 ament_target_dependencies(attach_shelf_node 
@@ -30,10 +33,11 @@ ament_target_dependencies(attach_shelf_node
 	tf2_ros 
 	std_srvs
 	)
+rosidl_target_interfaces(approach_service_server_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 install(TARGETS
-  pre_approach_node
-  attach_shelf_node
+  pre_approach_v2_node
+  approach_service_server_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
