@@ -1,5 +1,0 @@
-<launch>
-    <include file="$(find-pkg-share attach_shelf)/launch/pre_approach.launch.xml" />
-
-    <node pkg="attach_shelf" exec="attach_shelf_node" name="attach_shelf_node" output="screen" />
-</launch>
