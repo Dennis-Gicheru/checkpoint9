@@ -13,10 +13,17 @@ find_package(geometry_msgs REQUIRED)
 
 
 add_executable(pre_approach_node src/pre_approach.cpp)
-ament_target_dependencies(pre_approach_node rclcpp sensor_msgs geometry_msgs)
+ament_target_dependencies(pre_approach_node 
+	rclcpp 
+	sensor_msgs 
+	geometry_msgs
+	tf2_ros
+	std_srvs
+	)
 
 install(TARGETS
   pre_approach_node
+  attach_shelf_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
