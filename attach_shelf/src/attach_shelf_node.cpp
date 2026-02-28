@@ -6,6 +6,12 @@
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include <cmath>
 
+
+struct Point2D {
+    double x;
+    double y;
+};
+
 class AttachShelfNode : public rclcpp::Node {
 public:
     AttachShelfNode() : Node("attach_shelf_node"), state_(0) {
@@ -28,19 +34,83 @@ public:
 private:
     void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
         if (state_ == 0) {
-            // STEP 1: PERCEPTION
-            // TODO: Parse msg->ranges to find the two shelf legs.
-            // Calculate the midpoint (target_x, target_y) between the two legs.
+            // STEP 1: PERCEPTION & CLUSTERING
+            std::vector<Point2D> high_intensity_points;
             
-            // For now, let's assume you calculated the midpoint 1.0 meter straight ahead:
-            double target_x = 1.0; 
-            double target_y = 0.0;
+            // 1. Filter for reflective tape (high intensity) and convert to Cartesian
+            double intensity_threshold = 8000.0; // Standard Gazebo reflective threshold
             
+            for (size_t i = 0; i < msg->ranges.size(); ++i) {
+                if (msg->intensities[i] >= intensity_threshold) {
+                    double angle = msg->angle_min + (i * msg->angle_increment);
+                    double range = msg->ranges[i];
+                    
+                    Point2D p;
+                    p.x = range * std::cos(angle);
+                    p.y = range * std::sin(angle);
+                    high_intensity_points.push_back(p);
+                }
+            }
+
+            // 2. We need exactly two clusters (the two legs). 
+            // If we don't have enough data points yet, return and wait for the next scan.
+            if (high_intensity_points.size() < 2) {
+                return; 
+            }
+
+            // 3. Separate the points into two discrete clusters based on spatial distance.
+            // Assuming the legs are far enough apart, a large jump in the 'y' or 'x' distance signifies the gap.
+            std::vector<Point2D> leg1_points, leg2_points;
+            leg1_points.push_back(high_intensity_points[0]);
+            
+            for (size_t i = 1; i < high_intensity_points.size(); ++i) {
+                // Calculate Euclidean distance between consecutive high-intensity points
+                double dx = high_intensity_points[i].x - high_intensity_points[i-1].x;
+                double dy = high_intensity_points[i].y - high_intensity_points[i-1].y;
+                double distance = std::sqrt(dx*dx + dy*dy);
+
+                // If the distance between points is greater than 0.1m, it's the second leg
+                if (distance > 0.1) {
+                    leg2_points.push_back(high_intensity_points[i]);
+                } else {
+                    if (leg2_points.empty()) {
+                        leg1_points.push_back(high_intensity_points[i]);
+                    } else {
+                        leg2_points.push_back(high_intensity_points[i]);
+                    }
+                }
+            }
+
+            // Ensure we successfully isolated two distinct legs
+            if (leg1_points.empty() || leg2_points.empty()) {
+                return;
+            }
+
+            // 4. Calculate the centroid of each leg
+            auto calc_centroid = [](const std::vector<Point2D>& points) {
+                Point2D centroid = {0.0, 0.0};
+                for (const auto& p : points) {
+                    centroid.x += p.x;
+                    centroid.y += p.y;
+                }
+                centroid.x /= points.size();
+                centroid.y /= points.size();
+                return centroid;
+            };
+
+            Point2D leg1_center = calc_centroid(leg1_points);
+            Point2D leg2_center = calc_centroid(leg2_points);
+
+            // 5. Calculate the final target midpoint between the two legs
+            double target_x = (leg1_center.x + leg2_center.x) / 2.0;
+            double target_y = (leg1_center.y + leg2_center.y) / 2.0;
+            
+            // Broadcast the frame and transition to the Approach state
             broadcast_shelf_frame(target_x, target_y);
-            
-            // Once found and broadcasted, transition to approach
-            // state_ = 1; 
+            RCLCPP_INFO(this->get_logger(), "Shelf legs detected. Midpoint published to TF.");
+            state_ = 1; 
         } 
+    
         else if (state_ == 1) {
             // STEP 2: KINEMATICS (Approaching)
             // Execute a P-controller to drive towards the broadcasted TF frame
