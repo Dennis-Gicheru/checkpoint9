@@ -1,7 +1,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "geometry_msgs/msg/twist.hpp"
-#include "custom_interfaces/srv/go_to_loading.hpp"
+#include "attach_shelf/srv/go_to_loading.hpp"
 #include <cmath>
 
 class PreApproachV2 : public rclcpp::Node {
@@ -20,7 +20,7 @@ public:
             "/scan", rclcpp::SensorDataQoS(),
             std::bind(&PreApproachV2::scan_callback, this, std::placeholders::_1));
             
-        approach_client_ = this->create_client<custom_interfaces::srv::GoToLoading>("/approach_shelf");
+        approach_client_ = this->create_client<attach_shelf::srv::GoToLoading>("/approach_shelf");
     }
 
 private:
@@ -69,11 +69,11 @@ private:
             RCLCPP_WARN(this->get_logger(), "Waiting for /approach_shelf service to be available...");
         }
 
-        auto request = std::make_shared<custom_interfaces::srv::GoToLoading::Request>();
+        auto request = std::make_shared<attach_shelf::srv::GoToLoading::Request>();
         request->attach_to_shelf = final_approach_;
 
         approach_client_->async_send_request(request, 
-            [this](rclcpp::Client<custom_interfaces::srv::GoToLoading>::SharedFuture response) {
+            [this](rclcpp::Client<attach_shelf::srv::GoToLoading>::SharedFuture response) {
                 if (response.get()->complete) {
                     RCLCPP_INFO(this->get_logger(), "Final approach executed successfully.");
                 } else {
@@ -89,7 +89,7 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscriber_;
     rclcpp::TimerBase::SharedPtr timer_;
-    rclcpp::Client<custom_interfaces::srv::GoToLoading>::SharedPtr approach_client_;
+    rclcpp::Client<attach_shelf::srv::GoToLoading>::SharedPtr approach_client_;
 };
 
 int main(int argc, char * argv[]) {

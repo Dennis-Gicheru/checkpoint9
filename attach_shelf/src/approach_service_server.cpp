@@ -2,7 +2,7 @@
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "std_srvs/srv/empty.hpp"
-#include "custom_interfaces/srv/go_to_loading.hpp"
+#include "attach_shelf/srv/go_to_loading.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
@@ -31,7 +31,7 @@ public:
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-        service_ = this->create_service<custom_interfaces::srv::GoToLoading>(
+        service_ = this->create_service<attach_shelf::srv::GoToLoading>(
             "/approach_shelf",
             std::bind(&ApproachServiceServer::handle_approach, this, std::placeholders::_1, std::placeholders::_2),
             rmw_qos_profile_services_default, cb_group_);
@@ -40,8 +40,8 @@ public:
     }
 
 private:
-    void handle_approach(const std::shared_ptr<custom_interfaces::srv::GoToLoading::Request> request,
-                         std::shared_ptr<custom_interfaces::srv::GoToLoading::Response> response) {
+    void handle_approach(const std::shared_ptr<attach_shelf::srv::GoToLoading::Request> request,
+                         std::shared_ptr<attach_shelf::srv::GoToLoading::Response> response) {
         if (!last_scan_) {
             RCLCPP_ERROR(this->get_logger(), "No laser scan data available yet.");
             response->complete = false;
@@ -139,7 +139,7 @@ private:
     sensor_msgs::msg::LaserScan::SharedPtr last_scan_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
-    rclcpp::Service<custom_interfaces::srv::GoToLoading>::SharedPtr service_;
+    rclcpp::Service<attach_shelf::srv::GoToLoading>::SharedPtr service_;
     rclcpp::Client<std_srvs::srv::Empty>::SharedPtr elevator_client_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
