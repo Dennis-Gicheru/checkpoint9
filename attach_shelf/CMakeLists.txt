@@ -10,7 +10,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-
+find_package(tf2_ros REQUIRED)
+find_package(std_srvs REQUIRED)
 
 add_executable(pre_approach_node src/pre_approach.cpp)
 ament_target_dependencies(pre_approach_node 
@@ -18,6 +19,15 @@ ament_target_dependencies(pre_approach_node
 	sensor_msgs 
 	geometry_msgs
 	tf2_ros
+	std_srvs
+	)
+
+add_executable(attach_shelf_node src/attach_shelf_node.cpp)
+ament_target_dependencies(attach_shelf_node 
+	rclcpp 
+	sensor_msgs 
+	geometry_msgs 
+	tf2_ros 
 	std_srvs
 	)
 
