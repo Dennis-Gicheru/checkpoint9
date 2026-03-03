@@ -102,7 +102,7 @@ private:
                 double err_y = t.transform.translation.y;
                 
                 // If we are close enough to pass directly under the shelf
-                if (err_x < 0.15) { 
+                if (err_x < 0.35) { 
                     reached = true; // Loop will break on the next iteration
                 } else {
                     // Calculate proper heading error using arctangent
@@ -129,7 +129,7 @@ private:
             twist.linear.x = 0.2;
             twist.angular.z = 0.0;
             cmd_pub_->publish(twist);
-            rclcpp::sleep_for(std::chrono::milliseconds(2000)); // Push under the center of mass
+            rclcpp::sleep_for(std::chrono::milliseconds(3250)); // Push under the center of mass
             
             twist.linear.x = 0.0;
             cmd_pub_->publish(twist); // Hard stop
