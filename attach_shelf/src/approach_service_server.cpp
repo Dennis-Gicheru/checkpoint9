@@ -43,15 +43,9 @@ private:
     void handle_approach(const std::shared_ptr<attach_shelf::srv::GoToLoading::Request> request,
                          std::shared_ptr<attach_shelf::srv::GoToLoading::Response> response) {
         
-        if (!request->attach_to_shelf) {
-            response->complete = false;
-            return;
-        }
-
         rclcpp::Rate rate(10);
         bool reached = false; 
 
-        // CONTINUOUS VISUAL SERVOING LOOP
         while (rclcpp::ok() && !reached) {
             if (!last_scan_) continue;
 
@@ -83,7 +77,7 @@ private:
                 continue;
             }
 
-            // 2. Continuously Publish the updated TF
+            // 2. Publish the TF
             auto calc_centroid = [](const std::vector<Point2D>& pts) {
                 Point2D c = {0, 0};
                 for (const auto& p : pts) { c.x += p.x; c.y += p.y; }
@@ -94,26 +88,29 @@ private:
 
             broadcast_tf(mid.x, mid.y);
 
+            
+            if (!request->attach_to_shelf) {
+                RCLCPP_INFO(this->get_logger(), "Final approach is FALSE. TF published, halting movement.");
+                response->complete = false; // Returns false because final approach was not executed
+                return; 
+            }
+
             // 3. Decoupled Kinematics (Tank-Like Point and Shoot)
             try {
                 auto t = tf_buffer_->lookupTransform("robot_base_link", "cart_frame", tf2::TimePointZero);
                 double err_x = t.transform.translation.x;
                 double err_y = t.transform.translation.y;
                 
-                // Break loop BEFORE blindspot (0.35m away)
                 if (err_x < 0.35) { 
                     reached = true; 
                 } else {
                     double heading_error = std::atan2(err_y, err_x);
                     auto twist = geometry_msgs::msg::Twist();
 
-                    // State Machine: Align vs Drive
                     if (std::abs(heading_error) > 0.05) { 
-                        // State A: Rotate in place (Tolerance of ~3 degrees)
                         twist.linear.x = 0.0;
                         twist.angular.z = std::clamp(1.0 * heading_error, -0.5, 0.5); 
                     } else {
-                        // State B: Drive strictly forward
                         twist.linear.x = std::clamp(0.5 * err_x, 0.05, 0.2); 
                         twist.angular.z = 0.0; 
                     }
@@ -130,19 +127,15 @@ private:
         // 4. Blind final push and Lift
         if (reached) {
             auto twist = geometry_msgs::msg::Twist();
-            
-            // Drive purely straight for the final approach
             twist.linear.x = 0.2;
             twist.angular.z = 0.0;
             cmd_pub_->publish(twist);
             
-            // Push for 3.25 seconds to travel exactly 0.65m under the center of mass
             rclcpp::sleep_for(std::chrono::milliseconds(3250)); 
             
             twist.linear.x = 0.0;
-            cmd_pub_->publish(twist); // Hard stop
+            cmd_pub_->publish(twist); 
 
-            // Trigger Gazebo Lift
             auto el_req = std::make_shared<std_srvs::srv::Empty::Request>();
             elevator_client_->async_send_request(el_req);
             response->complete = true;
