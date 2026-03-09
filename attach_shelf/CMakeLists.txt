@@ -18,23 +18,25 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GoToLoading.srv"
 )
-
-# Extract the C++ typesupport target into a CMake variable
 rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
-# 3. Add Executables and Link Dependencies
-# Pre-Approach V2
+# 3. Add Executables
+# --- TASK 1 ---
+add_executable(pre_approach_node src/pre_approach.cpp)
+ament_target_dependencies(pre_approach_node rclcpp sensor_msgs geometry_msgs)
+
+# --- TASK 2 ---
 add_executable(pre_approach_v2_node src/pre_approach_v2.cpp)
 ament_target_dependencies(pre_approach_v2_node rclcpp sensor_msgs geometry_msgs)
 target_link_libraries(pre_approach_v2_node "${cpp_typesupport_target}")
 
-# Approach Service Server
 add_executable(approach_service_server_node src/approach_service_server.cpp)
 ament_target_dependencies(approach_service_server_node rclcpp sensor_msgs geometry_msgs tf2_ros std_srvs)
 target_link_libraries(approach_service_server_node "${cpp_typesupport_target}")
 
 # 4. Install Directives
 install(TARGETS
+  pre_approach_node
   pre_approach_v2_node
   approach_service_server_node
   DESTINATION lib/${PROJECT_NAME}
