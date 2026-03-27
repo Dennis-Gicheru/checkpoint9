@@ -1,7 +1,8 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include "geometry_msgs/msg/twist.hpp"
-#include "std_srvs/srv/empty.hpp"
+#include "std_msgs/msg/empty.hpp" // Changed from std_srvs to std_msgs
 #include "attach_shelf/srv/go_to_loading.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
@@ -24,8 +25,14 @@ public:
             "/scan", rclcpp::SensorDataQoS(),
             [this](const sensor_msgs::msg::LaserScan::SharedPtr msg) { last_scan_ = msg; }, sub_opts);
 
+        odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+            "/odom", 10,
+            [this](const nav_msgs::msg::Odometry::SharedPtr msg) { last_odom_ = msg; }, sub_opts);
+
         cmd_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/diffbot_base_controller/cmd_vel_unstamped", 10);
-        elevator_client_ = this->create_client<std_srvs::srv::Empty>("/elevator_up");
+        
+        // NEW: Elevator Publisher instead of Client
+        elevator_pub_ = this->create_publisher<std_msgs::msg::Empty>("/elevator_up", 10);
         
         tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -36,7 +43,7 @@ public:
             std::bind(&ApproachServiceServer::handle_approach, this, std::placeholders::_1, std::placeholders::_2),
             rmw_qos_profile_services_default, cb_group_);
 
-        RCLCPP_INFO(this->get_logger(), "Approach Service Server Ready.");
+        RCLCPP_INFO(this->get_logger(), "Approach Service Server Ready. Using Topic-based Elevator.");
     }
 
 private:
@@ -46,10 +53,11 @@ private:
         rclcpp::Rate rate(10);
         bool reached = false; 
 
+        // Phase 1-3: Visual Servoing (Laser/TF)
         while (rclcpp::ok() && !reached) {
             if (!last_scan_) continue;
 
-            // 1. Detect Legs dynamically
+            // Leg detection...
             std::vector<Point2D> high_intensity_points;
             for (size_t i = 0; i < last_scan_->ranges.size(); ++i) {
                 if (last_scan_->intensities[i] >= 8000.0) {
@@ -70,14 +78,12 @@ private:
             }
 
             if (leg1.empty() || leg2.empty()) {
-                RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Waiting for clear view of both legs...");
                 auto twist = geometry_msgs::msg::Twist();
                 cmd_pub_->publish(twist);
                 rate.sleep();
                 continue;
             }
 
-            // 2. Publish the TF
             auto calc_centroid = [](const std::vector<Point2D>& pts) {
                 Point2D c = {0, 0};
                 for (const auto& p : pts) { c.x += p.x; c.y += p.y; }
@@ -88,59 +94,61 @@ private:
 
             broadcast_tf(mid.x, mid.y);
 
-            
             if (!request->attach_to_shelf) {
-                RCLCPP_INFO(this->get_logger(), "Final approach is FALSE. TF published, halting movement.");
-                response->complete = false; // Returns false because final approach was not executed
+                response->complete = false;
                 return; 
             }
 
-            // 3. Decoupled Kinematics (Tank-Like Point and Shoot)
             try {
                 auto t = tf_buffer_->lookupTransform("robot_base_link", "cart_frame", tf2::TimePointZero);
                 double err_x = t.transform.translation.x;
                 double err_y = t.transform.translation.y;
                 
-                if (err_x < 0.35) { 
-                    reached = true; 
-                } else {
+                if (err_x < 0.35) { reached = true; } 
+                else {
                     double heading_error = std::atan2(err_y, err_x);
                     auto twist = geometry_msgs::msg::Twist();
-
                     if (std::abs(heading_error) > 0.05) { 
-                        twist.linear.x = 0.0;
                         twist.angular.z = std::clamp(1.0 * heading_error, -0.5, 0.5); 
                     } else {
                         twist.linear.x = std::clamp(0.5 * err_x, 0.05, 0.2); 
-                        twist.angular.z = 0.0; 
                     }
-                    
                     cmd_pub_->publish(twist);
                 }
-            } catch (const tf2::TransformException & ex) {
-                RCLCPP_WARN_ONCE(this->get_logger(), "TF Error: %s", ex.what());
-            }
-            
+            } catch (const tf2::TransformException & ex) { (void)ex; }
             rate.sleep(); 
         }
 
-        // 4. Blind final push and Lift
-        if (reached) {
-            auto twist = geometry_msgs::msg::Twist();
-            twist.linear.x = 0.2;
-            twist.angular.z = 0.0;
-            cmd_pub_->publish(twist);
-            
-            rclcpp::sleep_for(std::chrono::milliseconds(3250)); 
-            
-            twist.linear.x = 0.0;
-            cmd_pub_->publish(twist); 
+        // Phase 4: Odometry Push & Termination
+        if (reached && last_odom_) {
+            double start_x = last_odom_->pose.pose.position.x;
+            double start_y = last_odom_->pose.pose.position.y;
+            double dist = 0.0;
 
-            auto el_req = std::make_shared<std_srvs::srv::Empty::Request>();
-            elevator_client_->async_send_request(el_req);
+            while (rclcpp::ok() && dist < 0.65) {
+                dist = std::hypot(last_odom_->pose.pose.position.x - start_x, 
+                                  last_odom_->pose.pose.position.y - start_y);
+                auto twist = geometry_msgs::msg::Twist();
+                twist.linear.x = 0.2;
+                cmd_pub_->publish(twist);
+                rate.sleep();
+            }
+
+            // Hard stop
+            auto stop_twist = geometry_msgs::msg::Twist();
+            cmd_pub_->publish(stop_twist); 
+
+            // NEW: Publish to the Topic to Lift the shelf
+            auto msg = std_msgs::msg::Empty();
+            elevator_pub_->publish(msg);
+            RCLCPP_INFO(this->get_logger(), "Elevator UP command published.");
+
             response->complete = true;
-        } else {
-            response->complete = false;
+
+            // Wait 500ms for message delivery, then terminate
+            rclcpp::sleep_for(std::chrono::milliseconds(500));
+            RCLCPP_INFO(this->get_logger(), "Task complete. Shutting down.");
+            rclcpp::shutdown();
         }
     }
 
@@ -155,12 +163,14 @@ private:
         tf_broadcaster_->sendTransform(t);
     }
 
-    rclcpp::CallbackGroup::SharedPtr cb_group_;
     sensor_msgs::msg::LaserScan::SharedPtr last_scan_;
+    nav_msgs::msg::Odometry::SharedPtr last_odom_;
+    rclcpp::CallbackGroup::SharedPtr cb_group_;
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
+    rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr elevator_pub_; // New Publisher
     rclcpp::Service<attach_shelf::srv::GoToLoading>::SharedPtr service_;
-    rclcpp::Client<std_srvs::srv::Empty>::SharedPtr elevator_client_;
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
@@ -172,6 +182,5 @@ int main(int argc, char * argv[]) {
     auto node = std::make_shared<ApproachServiceServer>();
     executor.add_node(node);
     executor.spin();
-    rclcpp::shutdown();
     return 0;
 }

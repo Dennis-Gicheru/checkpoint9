@@ -9,9 +9,10 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)         
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(std_srvs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 # 2. Generate the Service Interface
@@ -30,8 +31,16 @@ add_executable(pre_approach_v2_node src/pre_approach_v2.cpp)
 ament_target_dependencies(pre_approach_v2_node rclcpp sensor_msgs geometry_msgs)
 target_link_libraries(pre_approach_v2_node "${cpp_typesupport_target}")
 
+# Updated: Added nav_msgs to the approach_service_server_node dependencies
 add_executable(approach_service_server_node src/approach_service_server.cpp)
-ament_target_dependencies(approach_service_server_node rclcpp sensor_msgs geometry_msgs tf2_ros std_srvs)
+ament_target_dependencies(approach_service_server_node 
+  rclcpp 
+  sensor_msgs 
+  nav_msgs                              
+  geometry_msgs 
+  tf2_ros 
+  std_msgs
+)
 target_link_libraries(approach_service_server_node "${cpp_typesupport_target}")
 
 # 4. Install Directives
