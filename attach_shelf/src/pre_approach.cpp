@@ -22,49 +22,59 @@ public:
 
 private:
     void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+        // Prevent callback execution if the node is shutting down
+        if (state_ == 2) return;
+
         auto twist = geometry_msgs::msg::Twist();
         
-        // Isolate the ray directly in front of the robot (assuming 0 is front or center of array)
+        // Isolate the ray directly in front of the robot
         int center_idx = msg->ranges.size() / 2; 
         double front_distance = msg->ranges[center_idx];
 
-        if (state_ == 0) { // Moving Forward
+        if (state_ == 0) { // State 0: Moving Forward
             if (front_distance > obstacle_dist_) {
-                twist.linear.x = 0.2; // Move forward at 0.2 m/s
+                twist.linear.x = 0.2; 
+                publisher_->publish(twist); // Continuous heartbeat
             } else {
                 twist.linear.x = 0.0;
-                publisher_->publish(twist); // Stop immediately
+                publisher_->publish(twist); // Hard stop
                 RCLCPP_INFO(this->get_logger(), "Obstacle reached. Starting rotation.");
                 start_rotation();
             }
         } 
-        
-        if (state_ == 0) {
-             publisher_->publish(twist);
+        else if (state_ == 1) { // State 1: Rotating
+            // Continuously publish the rotation command to feed the velocity watchdog
+            double angular_speed = 0.5; // rad/s
+            twist.angular.z = (degrees_ > 0) ? angular_speed : -angular_speed;
+            publisher_->publish(twist);
         }
     }
 
     void start_rotation() {
-        state_ = 1;
-        auto twist = geometry_msgs::msg::Twist();
+        state_ = 1; // Transition to rotating state
         
-        // Convert degrees to radians
+        // Convert degrees to radians and calculate required time
         double radians = degrees_ * (M_PI / 180.0);
         double angular_speed = 0.5; // rad/s
         double rotation_time = std::abs(radians) / angular_speed;
-        
-        twist.angular.z = (degrees_ > 0) ? angular_speed : -angular_speed;
-        publisher_->publish(twist);
 
-        // Timer to stop rotation after calculated time
+        // Timer to stop rotation and kill the node after calculated time
         timer_ = this->create_wall_timer(
             std::chrono::duration<double>(rotation_time),
             [this]() {
-                auto stop_twist = geometry_msgs::msg::Twist();
-                publisher_->publish(stop_twist);
-                RCLCPP_INFO(this->get_logger(), "Rotation complete. Final position achieved.");
                 state_ = 2; // Done
+                
+                // 1. Publish the final hard stop to prevent drifting
+                auto stop_twist = geometry_msgs::msg::Twist();
+                stop_twist.linear.x = 0.0;
+                stop_twist.angular.z = 0.0;
+                publisher_->publish(stop_twist);
+
+                RCLCPP_INFO(this->get_logger(), "Rotation complete. Terminating pre-approach node.");
+                
+                // 2. Cancel the timer and gracefully shutdown the ROS 2 node
                 timer_->cancel();
+                rclcpp::shutdown();
             });
     }
 
@@ -79,6 +89,6 @@ private:
 int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<PreApproach>());
-    rclcpp::shutdown();
+    // rclcpp::shutdown() is called internally by the timer, unblocking spin()
     return 0;
 }
