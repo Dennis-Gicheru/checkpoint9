@@ -38,6 +38,12 @@ install(TARGETS pre_approach_component
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
+# Install the rviz and launch directories
+install(DIRECTORY
+  launch
+  rviz
+  DESTINATION share/${PROJECT_NAME}
+)
 
 install(DIRECTORY include/ DESTINATION include)
 

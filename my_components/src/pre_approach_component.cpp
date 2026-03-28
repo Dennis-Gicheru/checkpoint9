@@ -11,7 +11,7 @@ PreApproach::PreApproach(const rclcpp::NodeOptions & options)
   
   subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
     "/scan", rclcpp::SensorDataQoS(),
-    std::bind(&Preapproach::scan_callback, this, std::placeholders::_1));
+    std::bind(&PreApproach::scan_callback, this, std::placeholders::_1));
 
   RCLCPP_INFO(this->get_logger(), "Preapproach Component initialized in my_components package.");
 }
