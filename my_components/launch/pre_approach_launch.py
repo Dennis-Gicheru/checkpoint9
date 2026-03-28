@@ -15,7 +15,7 @@ def generate_launch_description():
             # 2. Define the Composable Node (The Plugin)
             ComposableNode(
                 package='my_components',
-                plugin='my_components::Preapproach',
+                plugin='my_components::PreApproach',
                 name='pre_approach_node'
             ),
         ],

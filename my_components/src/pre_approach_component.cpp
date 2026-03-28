@@ -3,7 +3,7 @@
 
 namespace my_components
 {
-Preapproach::Preapproach(const rclcpp::NodeOptions & options)
+PreApproach::PreApproach(const rclcpp::NodeOptions & options)
 : Node("pre_approach", options), state_(0)
 {
   publisher_ = this->create_publisher<geometry_msgs::msg::Twist>(
@@ -16,7 +16,7 @@ Preapproach::Preapproach(const rclcpp::NodeOptions & options)
   RCLCPP_INFO(this->get_logger(), "Preapproach Component initialized in my_components package.");
 }
 
-void Preapproach::scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
+void PreApproach::scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
 {
   if (state_ == 2) return;
   auto twist = geometry_msgs::msg::Twist();
@@ -37,7 +37,7 @@ void Preapproach::scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg
   }
 }
 
-void Preapproach::start_rotation()
+void PreApproach::start_rotation()
 {
   state_ = 1;
   double rotation_time = (std::abs(target_degrees_ * M_PI / 180.0)) / 0.5;

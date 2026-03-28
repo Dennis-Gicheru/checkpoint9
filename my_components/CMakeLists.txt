@@ -30,7 +30,7 @@ ament_target_dependencies(pre_approach_component
 
 # Register the component
 rclcpp_components_register_nodes(pre_approach_component
-  "my_components::Preapproach"
+  "my_components::PreApproach"
 )
 
 install(TARGETS pre_approach_component
