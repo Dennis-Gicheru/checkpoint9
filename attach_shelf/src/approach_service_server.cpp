@@ -94,6 +94,8 @@ private:
 
             broadcast_tf(mid.x, mid.y);
 
+
+/*
             if (!request->attach_to_shelf) {
                 response->complete = false;
                 return; 
@@ -119,7 +121,10 @@ private:
             rate.sleep(); 
         }
 
+*/
+
         // Phase 4: Odometry Push & Termination
+        /*
         if (reached && last_odom_) {
             double start_x = last_odom_->pose.pose.position.x;
             double start_y = last_odom_->pose.pose.position.y;
@@ -142,6 +147,7 @@ private:
             auto msg = std_msgs::msg::Empty();
             elevator_pub_->publish(msg);
             RCLCPP_INFO(this->get_logger(), "Elevator UP command published.");
+            */
 
             response->complete = true;
 

@@ -24,11 +24,21 @@ rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typ
 # 3. Add Executables
 # --- TASK 1 ---
 add_executable(pre_approach_node src/pre_approach.cpp)
-ament_target_dependencies(pre_approach_node rclcpp sensor_msgs geometry_msgs)
+ament_target_dependencies(pre_approach_node 
+	rclcpp 
+	sensor_msgs 
+	nav_msgs 
+	geometry_msgs
+)
 
 # --- TASK 2 ---
 add_executable(pre_approach_v2_node src/pre_approach_v2.cpp)
-ament_target_dependencies(pre_approach_v2_node rclcpp sensor_msgs geometry_msgs)
+ament_target_dependencies(pre_approach_v2_node 
+	rclcpp 
+	sensor_msgs 
+	nav_msgs 
+	geometry_msgs
+)
 target_link_libraries(pre_approach_v2_node "${cpp_typesupport_target}")
 
 # Updated: Added nav_msgs to the approach_service_server_node dependencies
