@@ -41,7 +41,7 @@ ament_target_dependencies(pre_approach_v2_node
 )
 target_link_libraries(pre_approach_v2_node "${cpp_typesupport_target}")
 
-# Updated: Added nav_msgs to the approach_service_server_node dependencies
+# --- TASK 3 ---
 add_executable(approach_service_server_node src/approach_service_server.cpp)
 ament_target_dependencies(approach_service_server_node 
   rclcpp 
@@ -51,7 +51,9 @@ ament_target_dependencies(approach_service_server_node
   tf2_ros 
   std_msgs
 )
+
 target_link_libraries(approach_service_server_node "${cpp_typesupport_target}")
+
 
 # 4. Install Directives
 install(TARGETS

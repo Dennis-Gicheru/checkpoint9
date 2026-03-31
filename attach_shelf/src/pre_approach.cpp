@@ -42,7 +42,7 @@ private:
         double front_distance = msg->ranges[center_idx];
 
         if (front_distance > obstacle_dist_) {
-            twist.linear.x = 0.2; 
+            twist.linear.x = 0.3; 
             publisher_->publish(twist);
         } else {
             twist.linear.x = 0.0;
