@@ -25,7 +25,7 @@ add_library(pre_approach_component SHARED src/pre_approach_component.cpp)
 target_include_directories(pre_approach_component PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(pre_approach_component rclcpp rclcpp_components sensor_msgs geometry_msgs)
+ament_target_dependencies(pre_approach_component rclcpp rclcpp_components sensor_msgs nav_msgs geometry_msgs)
 rclcpp_components_register_nodes(pre_approach_component "my_components::PreApproach")
 
 # ==========================================
@@ -45,7 +45,7 @@ add_library(attach_client_component SHARED src/attach_client_component.cpp)
 target_include_directories(attach_client_component PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(attach_client_component rclcpp rclcpp_components attach_shelf)
+ament_target_dependencies(attach_client_component rclcpp rclcpp_components nav_msgs attach_shelf)
 rclcpp_components_register_nodes(attach_client_component "my_components::AttachClient")
 
 # ==========================================

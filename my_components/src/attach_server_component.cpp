@@ -1,6 +1,8 @@
 #include "my_components/attach_server_component.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
+#include <cmath>
+#include <vector>
 
 namespace my_components
 {
@@ -31,121 +33,132 @@ AttachServer::AttachServer(const rclcpp::NodeOptions & options)
     std::bind(&AttachServer::handle_approach, this, std::placeholders::_1, std::placeholders::_2),
     rmw_qos_profile_services_default, cb_group_);
 
-  RCLCPP_INFO(this->get_logger(), "AttachServer Component Ready.");
+  RCLCPP_INFO(this->get_logger(), "AttachServer Component Ready - Precision Mode.");
 }
 
 void AttachServer::handle_approach(
   const std::shared_ptr<attach_shelf::srv::GoToLoading::Request> request,
   std::shared_ptr<attach_shelf::srv::GoToLoading::Response> response)
 {
-  (void)request; 
+  if (!request->attach_to_shelf) {
+    response->complete = false;
+    return;
+  }
+
   rclcpp::Rate rate(10);
-  bool reached = false;
+  bool reached_front = false;
 
-  while (rclcpp::ok() && !reached) {
-    if (!last_scan_) { rate.sleep(); continue; }
-
-    // 1. Leg Detection Logic
-    std::vector<Point2D> high_intensity_points;
-    for (size_t i = 0; i < last_scan_->ranges.size(); ++i) {
-      if (last_scan_->intensities[i] >= 8000.0) {
-        double angle = last_scan_->angle_min + (i * last_scan_->angle_increment);
-        high_intensity_points.push_back({last_scan_->ranges[i] * std::cos(angle), 
-                                         last_scan_->ranges[i] * std::sin(angle)});
-      }
-    }
-
-    std::vector<Point2D> leg1, leg2;
-    if (high_intensity_points.size() >= 2) {
-      leg1.push_back(high_intensity_points[0]);
-      for (size_t i = 1; i < high_intensity_points.size(); ++i) {
-        double d = std::hypot(high_intensity_points[i].x - high_intensity_points[i-1].x, 
-                              high_intensity_points[i].y - high_intensity_points[i-1].y);
-        if (d > 0.1) leg2.push_back(high_intensity_points[i]);
-        else if (leg2.empty()) leg1.push_back(high_intensity_points[i]);
-        else leg2.push_back(high_intensity_points[i]);
-      }
-    }
-
-    // SAFETY CATCH: Stop moving if legs disappear
-    if (leg1.empty() || leg2.empty()) { 
-      auto stop_twist = geometry_msgs::msg::Twist();
-      cmd_pub_->publish(stop_twist);
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Waiting for shelf legs...");
+  // --- PHASE 1: ALIGNED APPROACH (Visual Servoing) ---
+  while (rclcpp::ok() && !reached_front) {
+    if (!last_scan_) { 
       rate.sleep(); 
       continue; 
     }
 
-    // 2. Calculate the center of the cart in the Laser's frame
-    auto get_c = [](const std::vector<Point2D>& pts) {
-      double sx=0, sy=0;
-      for(auto p : pts) { sx+=p.x; sy+=p.y; }
-      return Point2D{sx/pts.size(), sy/pts.size()};
-    };
-    Point2D p1 = get_c(leg1), p2 = get_c(leg2);
-    
-    double cart_x = (p1.x + p2.x) / 2.0;
-    double cart_y = (p1.y + p2.y) / 2.0;
+    // 1. Leg Detection
+    std::vector<Point2D> high_intensity;
+    for (size_t i = 0; i < last_scan_->ranges.size(); ++i) {
+      if (last_scan_->intensities[i] >= 8000.0) {
+        double angle = last_scan_->angle_min + (i * last_scan_->angle_increment);
+        high_intensity.push_back({last_scan_->ranges[i] * std::cos(angle), 
+                                  last_scan_->ranges[i] * std::sin(angle)});
+      }
+    }
 
-    // 3. Broadcast TF dynamically to RViz
+    // 2. Grouping legs
+    std::vector<Point2D> leg1, leg2;
+    if (high_intensity.size() >= 2) {
+      leg1.push_back(high_intensity[0]);
+      for (size_t i = 1; i < high_intensity.size(); ++i) {
+        double d = std::hypot(high_intensity[i].x - high_intensity[i-1].x, 
+                              high_intensity[i].y - high_intensity[i-1].y);
+        if (d > 0.1) leg2.push_back(high_intensity[i]);
+        else (leg2.empty() ? leg1 : leg2).push_back(high_intensity[i]);
+      }
+    }
+
+    if (leg1.empty() || leg2.empty()) {
+      cmd_pub_->publish(geometry_msgs::msg::Twist());
+      rate.sleep();
+      continue; 
+    }
+
+    // 3. Broadcast TF
+    auto avg = [](const std::vector<Point2D>& pts) {
+      double sx=0, sy=0; for(auto p : pts) { sx+=p.x; sy+=p.y; }
+      return Point2D{sx/(double)pts.size(), sy/(double)pts.size()};
+    };
+    Point2D mid = {(avg(leg1).x + avg(leg2).x) / 2.0, (avg(leg1).y + avg(leg2).y) / 2.0};
+    
     geometry_msgs::msg::TransformStamped t;
-    t.header.stamp = last_scan_->header.stamp;
-    t.header.frame_id = last_scan_->header.frame_id;
+    t.header.stamp = this->get_clock()->now();
+    t.header.frame_id = "robot_front_laser_base_link";
     t.child_frame_id = "cart_frame";
-    t.transform.translation.x = cart_x;
-    t.transform.translation.y = cart_y;
+    t.transform.translation.x = mid.x;
+    t.transform.translation.y = mid.y;
     t.transform.rotation.w = 1.0;
     tf_broadcaster_->sendTransform(t);
 
-    // 4. Tank-like straight movement (Zero rotation)
-    double distance_to_cart = std::hypot(cart_x, cart_y);
+    // 4. Navigation Control with Dampened Steering
+    try {
+      auto transform = tf_buffer_->lookupTransform("robot_base_link", "cart_frame", tf2::TimePointZero);
+      double dx = transform.transform.translation.x;
+      double dy = transform.transform.translation.y;
+      double dist = std::hypot(dx, dy);
+      double heading_err = std::atan2(dy, dx);
 
-    if (distance_to_cart < 0.35) {
-      reached = true;
-      auto stop_twist = geometry_msgs::msg::Twist();
-      cmd_pub_->publish(stop_twist);
-      RCLCPP_INFO(this->get_logger(), "Reached front of shelf. Starting 30cm penetration.");
-    } else {
-      auto twist = geometry_msgs::msg::Twist();
-      twist.linear.x = 0.15;  // Drive strictly forward
-      twist.angular.z = 0.0;  // Zero rotation
-      cmd_pub_->publish(twist);
-    }
-    
-    rate.sleep();
+      if (dist < 0.35) {
+        reached_front = true;
+        cmd_pub_->publish(geometry_msgs::msg::Twist()); 
+      } else {
+        auto twist = geometry_msgs::msg::Twist();
+        
+        // SLOW DOWN ON CURVES: Reduce speed if heading error is high
+        double base_speed = 0.08;
+        twist.linear.x = (std::abs(heading_err) > 0.05) ? (base_speed * 0.5) : base_speed;
+
+        // DAMPENED P-CONTROLLER: Gain 0.6 prevents aggressive swerving
+        if (std::abs(heading_err) > 0.01) { 
+          twist.angular.z = 0.6 * heading_err; 
+        } else {
+          twist.angular.z = 0.0;
+        }
+        cmd_pub_->publish(twist);
+      }
+    } catch (const tf2::TransformException & ex) { (void)ex; }
+
+    rate.sleep(); 
   }
 
-  // 5. Final Odom-based push (Extra 30cm straight under the shelf)
-  if (reached && last_odom_) {
+  // --- PHASE 2: FINAL ODOMETRY PUSH (30cm) ---
+  if (reached_front && last_odom_) {
+    RCLCPP_INFO(this->get_logger(), "Starting final push phase.");
     double sx = last_odom_->pose.pose.position.x;
     double sy = last_odom_->pose.pose.position.y;
-    double distance_traveled = 0.0;
+    double traveled = 0.0;
     
-    while (rclcpp::ok() && distance_traveled < 0.30) { 
-      distance_traveled = std::hypot(last_odom_->pose.pose.position.x - sx, 
-                                     last_odom_->pose.pose.position.y - sy);
-                                     
+    while (rclcpp::ok() && traveled < 0.30) { 
+      traveled = std::hypot(last_odom_->pose.pose.position.x - sx, 
+                            last_odom_->pose.pose.position.y - sy);
       auto twist = geometry_msgs::msg::Twist();
-      twist.linear.x = 0.15; // Drive strictly forward
-      twist.angular.z = 0.0; // Zero rotation
+      twist.linear.x = 0.05; // Snail speed
+      twist.angular.z = 0.0; // Straight
       cmd_pub_->publish(twist);
       rate.sleep();
     }
     
     // Stop and Lift
     cmd_pub_->publish(geometry_msgs::msg::Twist()); 
+    rclcpp::sleep_for(std::chrono::seconds(1));
     elevator_pub_->publish(std_msgs::msg::Empty()); 
+    
+    RCLCPP_INFO(this->get_logger(), "Success: Docking complete.");
     response->complete = true;
-    RCLCPP_INFO(this->get_logger(), "Shelf Attached Successfully.");
   }
 }
 
-void AttachServer::broadcast_tf(double x, double y)
-{
-  // TF logic handled dynamically inside the loop, keep this to satisfy header
-  (void)x;
-  (void)y;
-}
+void AttachServer::broadcast_tf(double x, double y) { (void)x; (void)y; }
+
 } // namespace my_components
 
 RCLCPP_COMPONENTS_REGISTER_NODE(my_components::AttachServer)

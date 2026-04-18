@@ -1,14 +1,12 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-# Note: We import Node specifically from launch_ros.actions
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 
 def generate_launch_description():
-    """Generate a launch description to run the PreApproach component and RViz."""
     
-    # 1. Dynamically find the path to your config file
+    # 1. Path to your config file
     pkg_share = get_package_share_directory('my_components') 
     rviz_config_path = os.path.join(pkg_share, 'rviz', 'config.rviz')
 
@@ -29,7 +27,7 @@ def generate_launch_description():
     )
 
     # 3. Define the RViz Node
-    # Using the 'Node' we imported above
+    
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -38,7 +36,7 @@ def generate_launch_description():
         output='screen'
     )
     
-    # 4. Return the list containing BOTH actions
+    # 4. REturn 
     return LaunchDescription([
         container,
         rviz_node
